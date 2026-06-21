@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>📸 Отправитель</title>
+    <style>
+        body {
+            background: #0a0a1a;
+            color: #00ff88;
+            font-family: Arial, sans-serif;
+            text-align: center;
+            padding: 20px;
+        }
+        video {
+            width: 100%;
+            max-width: 500px;
+            border-radius: 10px;
+            border: 2px solid #00ff88;
+            background: #000;
+        }
+        button {
+            padding: 12px 24px;
+            margin: 10px 5px;
+            border: none;
+            border-radius: 8px;
+            background: #00ff88;
+            color: #0a0a1a;
+            font-weight: bold;
+            font-size: 16px;
+            cursor: pointer;
+            transition: 0.3s;
+        }
+        button:hover { transform: scale(1.05); }
+        button.capture { background: #ff6b6b; color: #fff; }
+        button.send { background: #ffd93d; color: #0a0a1a; }
+        input {
+            padding: 10px;
+            border-radius: 8px;
+            border: 1px solid #333;
+            background: #0a0a1a;
+            color: #00ff88;
+            font-size: 14px;
+            width: 200px;
+        }
+        .status {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 8px;
+            background: #111133;
+            border-left: 4px solid #00ff88;
+        }
+        .preview {
+            max-width: 300px;
+            border-radius: 8px;
+            margin: 10px 0;
+            border: 2px solid #ff6b6b;
+            display: none;
+        }
+        .preview.show { display: block; }
+        .log {
+            background: #0a0a1a;
+            padding: 10px;
+            border-radius: 8px;
+            margin-top: 10px;
+            font-size: 12px;
+            max-height: 120px;
+            overflow-y: auto;
+            text-align: left;
+            border: 1px solid #222;
+            color: #888;
+        }
+        .log .ok { color: #00ff88; }
+        .log .err { color: #ff0044; }
+        .log .info { color: #ffd93d; }
+    </style>
+</head>
+<body>
+
+    <h2>📸 Отправитель</h2>
+    <p style="color: #888;">Сделай фото и отправь на основной телефон</p>
+
+    <video id="video" autoplay playsinline></video>
+    <canvas id="canvas" style="display:none;"></canvas>
+    <img id="preview" class="preview">
+
+    <div class="status" id="status">⏹ Камера выключена</div>
+
+    <input type="text" id="roomId" placeholder="Код комнаты (например: 12345)" value="12345">
+    <br>
+    <button onclick="startCamera()">📷 Включить</button>
+    <button class="capture" onclick="capture()">📸 Снять</button>
+    <button class="send" onclick="sendPhoto()">📤 Отправить</button>
+
+    <div class="log" id="log">
+        <div class="info">📡 Введи код комнаты и включи камеру</div>
+        <div class="info">💡 Код должен совпадать с кодом на приёмнике</div>
+    </div>
+
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+
+    <script>
+        // 🔥 ТВОИ КЛЮЧИ FIREBASE (УЖЕ ВСТАВЛЕНЫ)
+        const firebaseConfig = {
+            apiKey: "AIzaSyAB85x0LvWMvkixMrIIN_zulD7DlFPyaN8",
+            authDomain: "my-photo-1d9ed.firebaseapp.com",
+            databaseURL: "https://my-photo-1d9ed-default-rtdb.firebaseio.com",
+            projectId: "my-photo-1d9ed",
+            storageBucket: "my-photo-1d9ed.firebasestorage.app",
+            messagingSenderId: "928626086717",
+            appId: "1:928626086717:web:17e9ca20b2a56b332aab54"
+        };
+
+        firebase.initializeApp(firebaseConfig);
+        const database = firebase.database();
+
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const preview = document.getElementById('preview');
+        const status = document.getElementById('status');
+        const log = document.getElementById('log');
+        const roomIdInput = document.getElementById('roomId');
+
+        let stream = null;
+        let lastPhoto = null;
+
+        function addLog(msg, type = 'info') {
+            const div = document.createElement('div');
+            div.className = type;
+            div.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+            log.appendChild(div);
+            log.scrollTop = log.scrollHeight;
+        }
+
+        function setStatus(text, type = 'off') {
+            status.textContent = text;
+            status.style.borderLeftColor = type === 'on' ? '#00ff88' : type === 'wait' ? '#ffd93d' : '#ff0044';
+        }
+
+        async function startCamera() {
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                video.srcObject = stream;
+                setStatus('✅ Камера включена', 'on');
+                addLog('✅ Камера включена', 'ok');
+            } catch (e) {
+                setStatus('❌ Нет доступа к камере', 'off');
+                addLog('❌ ' + e.message, 'err');
+            }
+        }
+
+        function capture() {
+            if (!stream) {
+                addLog('⚠️ Включи камеру!', 'err');
+                return;
+            }
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(video, 0, 0);
+            lastPhoto = canvas.toDataURL('image/png');
+            preview.src = lastPhoto;
+            preview.className = 'preview show';
+            addLog('📸 Фото сделано', 'ok');
+        }
+
+        async function sendPhoto() {
+            if (!lastPhoto) {
+                addLog('⚠️ Сначала сделай фото!', 'err');
+                return;
+            }
+            const roomId = roomIdInput.value.trim();
+            if (!roomId) {
+                addLog('⚠️ Введи код комнаты!', 'err');
+                return;
+            }
+
+            setStatus('⏳ Отправка...', 'wait');
+            addLog(`📤 Отправляю в комнату ${roomId}...`, 'info');
+
+            try {
+                const ref = database.ref(`photos/${roomId}`);
+                await ref.set({
+                    photo: lastPhoto,
+                    timestamp: Date.now(),
+                    sender: 'phone2'
+                });
+                setStatus('✅ Отправлено!', 'on');
+                addLog('✅ Фото отправлено!', 'ok');
+                lastPhoto = null;
+                preview.className = 'preview';
+            } catch (e) {
+                setStatus('❌ Ошибка', 'off');
+                addLog('❌ ' + e.message, 'err');
+            }
+        }
+    </script>
+</body>
+</html>
